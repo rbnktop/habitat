@@ -1,102 +1,97 @@
+# gui.py
 from PySide6.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QWidget, 
-                             QLabel, QStackedWidget, QSplashScreen)
+                             QLabel, QStackedWidget, QSplashScreen, QLineEdit)
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal
 
 class SplashScreen(QSplashScreen):
-    """
-    A custom splash screen that only shows the PNG image.
-    """
+    """Transparent splash screen showing only the PNG."""
     def __init__(self, image_path):
         pixmap = QPixmap(image_path)
         super().__init__(pixmap)
-        
-        # Make the window frameless and the background transparent
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
 class HubView(QWidget):
-    """
-    The 'Home' screen or Tool Hub.
-    """
-    launch_tools_signal = Signal()
-    
+    """The landing page for the Hub."""
+    launch_tools_signal = Signal() # Signal to notify controller to switch windows
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
-        self.title = QLabel("Welcome to the Tool Hub")
+        self.title = QLabel("FaunaKit Hub")
         self.title.setStyleSheet("font-size: 24px; font-weight: bold;")
         
-        self.info_label = QLabel("Select a tool below to begin.")
-        
-        # Tool Selection Buttons
         self.btn_fuzzy_rabbit = QPushButton("Launch Fuzzy Rabbit")
         self.btn_fuzzy_rabbit.setFixedSize(200, 50)
+        
+        # Connect button to our custom signal
         self.btn_fuzzy_rabbit.clicked.connect(self.launch_tools_signal.emit)
 
         layout.addWidget(self.title)
-        layout.addWidget(self.info_label)
-        layout.addSpacing(20)
         layout.addWidget(self.btn_fuzzy_rabbit)
 
 class FuzzyRabbitView(QWidget):
-    """
-    The specific Tool UI.
-    """
-    def __init__(self, close_callback):
+    """The UI for the Fuzzy Rabbit tool."""
+    submitted = Signal(str) # Emits the text when 'Run Logic' is clicked
+    closed = Signal()      # Emits when 'Close' is clicked
+
+    def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
 
-        self.back_button = QPushButton("← Close Tools")
-        self.back_button.clicked.connect(close_callback)
-        self.title = QLabel("Fuzzy Rabbit Interface")
+        self.back_button = QPushButton("← Back to Hub")
+        self.back_button.clicked.connect(self.closed.emit)
+
+        self.title = QLabel("Fuzzy Rabbit")
         
-        # Placeholder for input
-        self.input_field = QLabel("Input Data") # Simplified
+        # We need an actual QLineEdit to get user input
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Enter designer notes...")
         
         self.run_button = QPushButton("Run Logic")
+        self.run_button.clicked.connect(self.handle_submit)
+        
         self.result_output = QLabel("Awaiting Input...")
+        self.result_output.setWordWrap(True)
 
         layout.addWidget(self.back_button, alignment=Qt.AlignLeft)
         layout.addWidget(self.title)
         layout.addWidget(self.input_field)
         layout.addWidget(self.run_button)
         layout.addWidget(self.result_output)
-        # run_button connect set later via set_logic_callback
 
-    def set_logic_callback(self, callback):
-    # Only connect if you aren't planning on changing this logic 
-    # multiple times during the widget's lifetime.
-        self.run_button.clicked.connect(callback)
+    def handle_submit(self):
+        """Extracts text and emits the signal."""
+        text = self.input_field.text()
+        self.submitted.emit(text)
 
-class HubWindow(QMainWindow):
-    launch_tools = Signal()
-    
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Tool Hub")
-        self.resize(400, 300)
-        
-        hub_widget = HubView()
-        hub_widget.launch_tools_signal.connect(self.launch_tools.emit)
-        self.setCentralWidget(hub_widget)
+    def update_result(self, text):
+        """Public method for the controller to push data back."""
+        self.result_output.setText(text)
 
 class ToolsContainer(QMainWindow):
     """
-    Separate window for tools using stacked widget.
+    The window that hosts different tools. 
+    It emits a signal when it is being closed via 'X' or button.
     """
-    def __init__(self, close_callback, logic_callback):
+    window_closed_signal = Signal()
+
+    def __init__(self):
         super().__init__()
-        self.close_callback = close_callback
-        self.setWindowTitle("Tools")
+        self.setWindowTitle("FaunaKit Tools")
         self.resize(800, 600)
 
-        self.content_stack = QStackedWidget()
-        self.setCentralWidget(self.content_stack)
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
 
-        self.fuzzy_screen = FuzzyRabbitView(close_callback)
-        self.fuzzy_screen.set_logic_callback(logic_callback)
+        # Initialize tool views
+        self.fuzzy_view = FuzzyRabbitView()
+        self.stack.addWidget(self.fuzzy_view)
 
-        self.content_stack.addWidget(self.fuzzy_screen)
+    def closeEvent(self, event):
+        """Override the OS-level close event (the 'X' button)."""
+        self.window_closed_signal.emit()
+        event.accept()
